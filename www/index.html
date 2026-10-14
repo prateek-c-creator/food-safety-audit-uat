@@ -454,7 +454,7 @@ async function flush(){
   }catch(err){
     dirty=true;saveErr=true;setSaveState('error');
     if(err&&err.code==='retry'){setSaveState('pending');setTimeout(function(){saveErr=false;flush();},1500);}
-    else if(err&&err.code==='locked')toast('This audit was already submitted.');
+    else if(err&&err.code==='locked'){dirty=false;saveErr=false;setSaveState('idle');toast('This audit is already submitted. Opening the saved copy. Tap Edit again to change it.');api('get',{key:E.key}).then(function(r){if(r.entry&&E){var k=E.key;E=r.entry;E.key=k;E.scores=E.scores||{};E.remarks=E.remarks||{};E.photos=E.photos||{};if(E.leases)delete E.leases;render();}}).catch(function(){});}
     else if(err&&err.code==='bad_code'){needCode();}
   }
   saving=false;
@@ -472,7 +472,7 @@ var toastTimer=null;
 function toast(msg){
   var old=$('.toast');if(old)old.remove();
   var t=el('div',{class:'toast',role:'status',text:msg});document.body.append(t);
-  clearTimeout(toastTimer);toastTimer=setTimeout(function(){t.remove();},3200);
+  clearTimeout(toastTimer);toastTimer=setTimeout(function(){t.remove();},Math.max(3200,msg.length*55));
 }
 function openLightbox(src){
   if(!src)return;
@@ -499,7 +499,7 @@ async function compress(file,maxSide,quality,stamp){
     var w=Math.max(1,Math.round(img.naturalWidth*s)),h=Math.max(1,Math.round(img.naturalHeight*s));
     var c=document.createElement('canvas');c.width=w;c.height=h;
     var x=c.getContext('2d');
-    x.drawImage(img,0,0,w,h);
+    x.imageSmoothingQuality='high';x.drawImage(img,0,0,w,h);
     if(stamp){
       var fs=Math.max(13,Math.round(Math.min(w,h)/24));
       var lines=stamp.slice();var bh=fs*1.45*lines.length+fs*0.6;
@@ -515,7 +515,7 @@ function nativeCam(){var C=window.Capacitor&&window.Capacitor.Plugins&&window.Ca
 async function addNative(q){
   var C=nativeCam();if(!C||!editable())return;
   try{
-    var r=await C.getPhoto({quality:85,resultType:'dataUrl',source:'CAMERA',saveToGallery:false,correctOrientation:true,width:1600});
+    var r=await C.getPhoto({quality:70,resultType:'dataUrl',source:'CAMERA',saveToGallery:false,correctOrientation:true,width:1280});
     if(r&&r.dataUrl)await addPhotoBlob(q,dataUrlToBlob(r.dataUrl));
   }catch(err){if(!/cancel/i.test(String(err&&err.message||err)))toast('Camera could not be opened. Allow camera access for this app.');}
 }
@@ -532,7 +532,7 @@ async function addPhotoBlob(q,blob){
   try{
     toast('Adding photo…');
     var stamp=[fmtStampSec(now),cname()+' · '+DEPTS[E.dept]+' '+SHIFTS[E.shift]+' · Point '+q.id+(E.emp&&E.emp.name?' · '+E.emp.name:'')];
-    var small=await compress(blob,1280,0.7,stamp);
+    var small=await compress(blob,900,0.6,stamp);
     var data=await blobToDataUrl(small);
     var r=await api('photo',{key:E.key,qid:q.id,data:data,at:now});
     photoCache.set(r.id,data);
@@ -668,7 +668,7 @@ function renderCheck(v){
   if(E.status==='submitted'){
     v.append(el('div',{class:'notice good'},el('div',{class:'row'},
       el('span',{text:'Completed '+fmtTime(E.submittedAt)+(E.emp&&E.emp.name?' by '+E.emp.name:'')}),
-      (canWrite&&db)?el('button',{type:'button',class:'btn sm tint',text:'Edit again',onclick:function(){E.status='draft';touch();render();}}):null)));
+      (canWrite&&db)?el('button',{type:'button',class:'btn sm tint',text:'Edit again',onclick:async function(){try{await api('reopen',{key:E.key});E.status='draft';E.submittedAt=null;touch();render();}catch(err){toast('Could not reopen this audit. Check internet and try again.');}}}):null)));
   }
   CARDS={};
   SECTIONS.forEach(function(s,si){
@@ -1091,8 +1091,8 @@ function renderReport(v){
   }}));
   btns.append(el('button',{type:'button',class:'btn sm tint',text:'Email report with Excel',onclick:async function(ev){
     var b=ev.target;b.disabled=true;toast('Sending report…');
-    try{var r=await api('emailReport',{from:S.from,to:S.to,cinema:CINEMA});toast('Report emailed to '+r.recipient+'.');}
-    catch(err){toast(err&&err.code==='empty'?'No audits in this period.':'Could not send the report.');}
+    try{var r=await api('emailReport',{from:S.from,to:S.to,cinema:CINEMA});toast('Report emailed to '+r.recipient+'.'+(r.warn?' Note: '+r.warn:''));}
+    catch(err){toast(err&&err.code==='empty'?'No audits in this period.':'Could not send the report'+(err&&err.message?': '+err.message:'.'));}
     b.disabled=false;
   }}));
   v.append(group(btns,el('details',{},el('summary',{text:'Preview summary text'}),el('pre',{class:'txt',text:summaryText(list)}))));
@@ -1107,7 +1107,7 @@ function openSent(res){
     el('div',{class:'sh-bar'},el('span'),el('div',{class:'sh-title',text:'Audit submitted'}),el('button',{type:'button',class:'tbtn strong',text:'Done',onclick:close})),
     el('div',{class:'pad'},
       el('p',{text:'Saved at '+fmtStamp(res.submittedAt)+'.'}),
-      el('div',{class:'notice '+(ok?'good':'bad'),style:'margin-top:10px',text:ok?'Report with table, photos and Excel was emailed to '+res.recipient+'.':(res.emailError==='norecipient'?'The audit is saved. No report email address is set yet. Tell the admin to add one in Admin; the report can then be sent from the Report tab.':'The audit is saved, but the email could not be sent. Tell the admin; the report can be re-sent from the Report tab.')})));
+      el('div',{class:'notice '+(ok?'good':'bad'),style:'margin-top:10px',text:ok?'Report with table, photos and Excel was emailed to '+res.recipient+'.'+(res.emailWarn?' Note: '+res.emailWarn+'.':''):(res.emailError==='norecipient'?'The audit is saved. No report email address is set yet. Tell the admin to add one in Admin; the report can then be sent from the Report tab.':'The audit is saved, but the email could not be sent. Tell the admin; the report can be re-sent from the Report tab.'+(res.emailError?' Reason: '+res.emailError:''))})));
   back.append(sheet);back.addEventListener('click',function(ev){if(ev.target===back)close();});
   document.body.append(back);requestAnimationFrame(function(){back.classList.add('open');});
 }
@@ -1334,7 +1334,7 @@ function renderAdmin(v){
       el('div',{style:'margin-top:10px'},flushBtn),
       API_URL==='sandbox'?null:el('div',{style:'margin-top:10px'},el('button',{type:'button',class:'btn sm',text:'Send test email (photos + Excel)',onclick:async function(ev){
         var b=ev.currentTarget;b.disabled=true;
-        try{var r=await api('testMail',{cinema:CINEMA});toast('Test email sent to '+r.recipient+'.');}catch(err){toast('Could not send the test email.');}
+        try{var r=await api('testMail',{cinema:CINEMA});toast('Test email sent to '+r.recipient+'.'+(r.warn?' Note: '+r.warn:''));}catch(err){toast('Could not send the test email'+(err&&err.message?': '+err.message:'.'));}
         b.disabled=false;}})),
       el('div',{style:'margin-top:10px'},el('button',{type:'button',class:'lnk',text:'Sign out',onclick:function(){TOKEN=null;render();}})))));
   }).catch(function(err){
