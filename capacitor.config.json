@@ -1,0 +1,11 @@
+{
+  "appId": "com.example.foodsafetyaudit",
+  "appName": "Food Safety Audit",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}
