@@ -1,0 +1,18 @@
+{
+  "name": "6E6032 EFB",
+  "short_name": "6E6032",
+  "description": "Offline GPS moving map for IndiGo 6E6032 Bengaluru to Jodhpur",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#070c14",
+  "theme_color": "#04070c",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
